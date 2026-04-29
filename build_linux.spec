@@ -7,13 +7,14 @@
 from PyInstaller.utils.hooks import collect_all
 
 ctk_datas, ctk_binaries, ctk_hiddenimports = collect_all("customtkinter")
+pg_datas, pg_binaries, pg_hiddenimports = collect_all("pygame")
 
 a = Analysis(
     ["main.py"],
     pathex=[],
-    binaries=ctk_binaries,
-    datas=[("_updater.py", ".")] + ctk_datas,
-    hiddenimports=ctk_hiddenimports,
+    binaries=ctk_binaries + pg_binaries,
+    datas=[("_updater.py", ".")] + ctk_datas + pg_datas,
+    hiddenimports=ctk_hiddenimports + pg_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

@@ -11,6 +11,7 @@ import os
 from PyInstaller.utils.hooks import collect_all
 
 ctk_datas, ctk_binaries, ctk_hiddenimports = collect_all("customtkinter")
+pg_datas, pg_binaries, pg_hiddenimports = collect_all("pygame")
 
 _icon_path = "assets/icon.ico"
 _icon_arg = _icon_path if os.path.exists(_icon_path) else None
@@ -18,9 +19,9 @@ _icon_arg = _icon_path if os.path.exists(_icon_path) else None
 a = Analysis(
     ["main.py"],
     pathex=[],
-    binaries=[("ffmpeg.exe", ".")] + ctk_binaries,
-    datas=[("_updater.py", ".")] + ctk_datas,
-    hiddenimports=ctk_hiddenimports,
+    binaries=[("ffmpeg.exe", ".")] + ctk_binaries + pg_binaries,
+    datas=[("_updater.py", ".")] + ctk_datas + pg_datas,
+    hiddenimports=ctk_hiddenimports + pg_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
