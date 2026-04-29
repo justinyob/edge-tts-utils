@@ -7,9 +7,8 @@ APP_NAME = "Voice Studio"
 APP_VERSION = "1.0.1"
 
 DEFAULT_SAMPLE_TEXT = (
-    "The quick brown fox jumps over the lazy dog. "
-    "She sells seashells by the seashore. "
-    "How much wood would a woodchuck chuck?"
+    "I love my friend Micah. "
+    "He is a swell fellow indeed, and his wife is pretty cool too."
 )
 
 DEFAULT_RATE = "+0%"
