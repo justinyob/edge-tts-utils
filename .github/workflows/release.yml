@@ -1,0 +1,118 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Download ffmpeg.exe
+        shell: pwsh
+        run: |
+          $url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+          Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
+          Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg-extracted
+          $exe = Get-ChildItem -Path ffmpeg-extracted -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          if (-not $exe) { throw "ffmpeg.exe not found in archive" }
+          Copy-Item $exe.FullName -Destination ffmpeg.exe
+          Get-Item ffmpeg.exe | Select-Object Name, Length
+
+      - name: Build
+        run: python build.py
+
+      - name: Verify artifact
+        shell: pwsh
+        run: |
+          if (-not (Test-Path dist/VoiceStudio.exe)) { throw "dist/VoiceStudio.exe not produced" }
+          Get-Item dist/VoiceStudio.exe | Select-Object Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-binary
+          path: dist/VoiceStudio.exe
+          if-no-files-found: error
+
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg python3-tk
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build
+        run: python build.py
+
+      - name: Verify artifact
+        run: |
+          test -f dist/VoiceStudio || { echo "dist/VoiceStudio not produced"; exit 1; }
+          ls -la dist/VoiceStudio
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-binary
+          path: dist/VoiceStudio
+          if-no-files-found: error
+
+  release:
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-binary
+          path: ./windows
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-binary
+          path: ./linux
+
+      - name: Stage assets with required filenames
+        run: |
+          mkdir -p assets-out
+          cp ./windows/VoiceStudio.exe assets-out/VoiceStudio.exe
+          cp ./linux/VoiceStudio       assets-out/VoiceStudio
+          chmod +x assets-out/VoiceStudio
+          ls -la assets-out
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Voice Studio $GITHUB_REF_NAME" \
+            --generate-notes \
+            assets-out/VoiceStudio.exe \
+            assets-out/VoiceStudio
