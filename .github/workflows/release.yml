@@ -23,16 +23,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Download ffmpeg.exe
+      - name: Download ffmpeg.exe and ffprobe.exe
         shell: pwsh
         run: |
           $url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
           Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip
           Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg-extracted
-          $exe = Get-ChildItem -Path ffmpeg-extracted -Recurse -Filter ffmpeg.exe | Select-Object -First 1
-          if (-not $exe) { throw "ffmpeg.exe not found in archive" }
-          Copy-Item $exe.FullName -Destination ffmpeg.exe
-          Get-Item ffmpeg.exe | Select-Object Name, Length
+
+          $ffmpeg = Get-ChildItem -Path ffmpeg-extracted -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          if (-not $ffmpeg) { throw "ffmpeg.exe not found in archive" }
+          Copy-Item $ffmpeg.FullName -Destination ffmpeg.exe
+
+          $ffprobe = Get-ChildItem -Path ffmpeg-extracted -Recurse -Filter ffprobe.exe | Select-Object -First 1
+          if (-not $ffprobe) { throw "ffprobe.exe not found in archive" }
+          Copy-Item $ffprobe.FullName -Destination ffprobe.exe
+
+          Get-Item ffmpeg.exe, ffprobe.exe | Select-Object Name, Length
 
       - name: Build
         run: python build.py

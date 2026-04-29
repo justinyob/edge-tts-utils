@@ -19,7 +19,7 @@ _icon_arg = _icon_path if os.path.exists(_icon_path) else None
 a = Analysis(
     ["main.py"],
     pathex=[],
-    binaries=[("ffmpeg.exe", ".")] + ctk_binaries + pg_binaries,
+    binaries=[("ffmpeg.exe", "."), ("ffprobe.exe", ".")] + ctk_binaries + pg_binaries,
     datas=[("_updater.py", ".")] + ctk_datas + pg_datas,
     hiddenimports=ctk_hiddenimports + pg_hiddenimports,
     hookspath=[],

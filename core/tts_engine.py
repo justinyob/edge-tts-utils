@@ -63,13 +63,37 @@ def _safe_remove(path: str) -> None:
 
 class TTSEngine:
     def __init__(self) -> None:
-        if getattr(sys, "frozen", False):
-            if platform.system() == "Windows":
-                ffmpeg_path = resource_path("ffmpeg.exe")
-            else:
-                ffmpeg_path = resource_path("ffmpeg")
-            if os.path.exists(ffmpeg_path):
-                AudioSegment.converter = ffmpeg_path
+        self._configure_ffmpeg()
+
+    @staticmethod
+    def _configure_ffmpeg() -> None:
+        """Point pydub at the bundled ffmpeg/ffprobe binaries when frozen."""
+        if not getattr(sys, "frozen", False):
+            return
+
+        is_windows = platform.system() == "Windows"
+        ffmpeg_name = "ffmpeg.exe" if is_windows else "ffmpeg"
+        ffprobe_name = "ffprobe.exe" if is_windows else "ffprobe"
+
+        ffmpeg_path = resource_path(ffmpeg_name)
+        ffprobe_path = resource_path(ffprobe_name)
+
+        if os.path.exists(ffmpeg_path):
+            AudioSegment.converter = ffmpeg_path
+            # pydub also reads `ffmpeg` on some code paths
+            AudioSegment.ffmpeg = ffmpeg_path
+            log.info("Bundled ffmpeg located at %s", ffmpeg_path)
+        else:
+            log.warning("Bundled ffmpeg not found at %s; falling back to PATH", ffmpeg_path)
+
+        if os.path.exists(ffprobe_path):
+            AudioSegment.ffprobe = ffprobe_path
+            log.info("Bundled ffprobe located at %s", ffprobe_path)
+        elif os.path.exists(ffmpeg_path):
+            # Better than failing: ffmpeg can answer most ffprobe queries pydub cares about,
+            # and even a wrong-arg invocation surfaces as a SubprocessError instead of WinError 2.
+            AudioSegment.ffprobe = ffmpeg_path
+            log.warning("Bundled ffprobe missing; using ffmpeg at %s as fallback", ffmpeg_path)
 
     async def _synthesize_chunk(
         self,
@@ -160,7 +184,14 @@ class TTSEngine:
                         end = start + ev["duration"] / 10_000_000
                         srt_entries.append((start, end, ev.get("text", "")))
 
-                segment = AudioSegment.from_file(chunk_path, format="mp3")
+                try:
+                    segment = AudioSegment.from_file(chunk_path, format="mp3")
+                except FileNotFoundError as e:
+                    log.exception("ffmpeg/ffprobe not found while measuring chunk %s", chunk_path)
+                    raise SynthesisError(MSG_SYNTHESIS_FAILED) from e
+                except Exception as e:
+                    log.exception("Failed to read chunk %s for duration", chunk_path)
+                    raise SynthesisError(MSG_SYNTHESIS_FAILED) from e
                 cumulative_offset_seconds += len(segment) / 1000.0
 
                 if progress_callback is not None:
@@ -170,12 +201,18 @@ class TTSEngine:
                 combined = AudioSegment.empty()
                 for cf in chunk_files:
                     combined += AudioSegment.from_file(cf, format="mp3")
+            except FileNotFoundError as e:
+                log.exception("ffmpeg/ffprobe not found while concatenating chunks")
+                raise SynthesisError(MSG_SYNTHESIS_FAILED) from e
             except Exception as e:
                 log.exception("Failed to concatenate audio chunks")
                 raise SynthesisError(MSG_SYNTHESIS_FAILED) from e
 
             try:
                 combined.export(output_path, format="mp3")
+            except FileNotFoundError as e:
+                log.exception("ffmpeg not found while exporting MP3 to %s", output_path)
+                raise SynthesisError(MSG_SYNTHESIS_FAILED) from e
             except (OSError, PermissionError) as e:
                 log.exception("Failed writing final MP3 to %s", output_path)
                 raise DiskWriteError(MSG_DISK_WRITE_FAILED) from e
