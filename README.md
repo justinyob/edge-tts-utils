@@ -10,6 +10,8 @@ A text-to-speech app powered by Microsoft Edge's TTS service.
 
 Download `VoiceStudio.exe` from the [latest release](https://github.com/justinyob/edge-tts-utils/releases/latest) and run it. No installation needed.
 
+> **Tip:** Put `VoiceStudio.exe` in its own folder (e.g. `C:\Users\<you>\VoiceStudio\`) before running it. The app writes `settings.json` and `voice_studio.log` next to the executable, and the auto-updater downloads its replacement into the same folder. Keeping it in a dedicated directory avoids cluttering Downloads or Desktop with these files.
+
 ### Linux
 
 Install dependencies first:
