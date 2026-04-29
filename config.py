@@ -4,7 +4,7 @@ import sys
 import tempfile
 
 APP_NAME = "Voice Studio"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.0.1"
 
 DEFAULT_SAMPLE_TEXT = (
     "The quick brown fox jumps over the lazy dog. "
