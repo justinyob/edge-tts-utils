@@ -6,9 +6,14 @@
 #   2. Activate the venv and: pip install -r requirements.txt
 # Build:
 #   pyinstaller build_windows.spec
+import os
+
 from PyInstaller.utils.hooks import collect_all
 
 ctk_datas, ctk_binaries, ctk_hiddenimports = collect_all("customtkinter")
+
+_icon_path = "assets/icon.ico"
+_icon_arg = _icon_path if os.path.exists(_icon_path) else None
 
 a = Analysis(
     ["main.py"],
@@ -42,5 +47,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon="assets/icon.ico",
+    icon=_icon_arg,
 )
