@@ -95,6 +95,16 @@ class TTSEngine:
             AudioSegment.ffprobe = ffmpeg_path
             log.warning("Bundled ffprobe missing; using ffmpeg at %s as fallback", ffmpeg_path)
 
+        # pydub.utils.mediainfo_json calls shutil.which("ffprobe") and ignores
+        # AudioSegment.ffprobe entirely. Prepend the bundle dir to PATH so the
+        # bare-name lookup resolves to our shipped binaries.
+        bin_dir = os.path.dirname(ffmpeg_path)
+        if os.path.isdir(bin_dir):
+            existing = os.environ.get("PATH", "")
+            if bin_dir not in existing.split(os.pathsep):
+                os.environ["PATH"] = bin_dir + os.pathsep + existing
+                log.info("Prepended bundle dir to PATH: %s", bin_dir)
+
     async def _synthesize_chunk(
         self,
         text: str,
