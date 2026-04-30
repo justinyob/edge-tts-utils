@@ -109,20 +109,35 @@ echo Waiting for process %1 to exit...
 set /a TRIES=0
 :wait
 tasklist /FI "PID eq %1" 2>NUL | find "%1" >NUL
-if %ERRORLEVEL% NEQ 0 goto swap
+if %ERRORLEVEL% NEQ 0 goto settle
 set /a TRIES+=1
-if %TRIES% GEQ 60 goto swap
+if %TRIES% GEQ 60 goto settle
 timeout /t 1 /nobreak >NUL
 goto wait
 
+:settle
+rem Process may be gone from tasklist before Windows has released the
+rem file handle on its exe. Give it a moment.
+timeout /t 2 /nobreak >NUL
+
 :swap
 echo Replacing "%~3"
-move /Y "%~2" "%~3" >NUL
-if %ERRORLEVEL% NEQ 0 (
-    echo Failed to replace "%~3"
-    pause
-    exit /b 1
-)
+set /a SWAP_TRIES=0
+:swap_retry
+move /Y "%~2" "%~3" >NUL 2>&1
+if %ERRORLEVEL% EQU 0 goto launched
+set /a SWAP_TRIES+=1
+if %SWAP_TRIES% GEQ 10 goto swap_failed
+echo Replace attempt %SWAP_TRIES% failed, retrying...
+timeout /t 1 /nobreak >NUL
+goto swap_retry
+
+:swap_failed
+echo Failed to replace "%~3" after 10 attempts
+pause
+exit /b 1
+
+:launched
 echo Relaunching...
 start "" "%~3"
 (goto) 2>nul & del "%~f0"
