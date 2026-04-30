@@ -49,7 +49,7 @@ a = Analysis(
         + pg_binaries
         + _tk_binaries
     ),
-    datas=[("_updater.py", ".")] + ctk_datas + pg_datas + _tk_datas,
+    datas=ctk_datas + pg_datas + _tk_datas,
     hiddenimports=ctk_hiddenimports + pg_hiddenimports + ["tkinter", "_tkinter"],
     hookspath=[],
     hooksconfig={},

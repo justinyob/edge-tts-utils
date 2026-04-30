@@ -13,7 +13,7 @@ a = Analysis(
     ["main.py"],
     pathex=[],
     binaries=ctk_binaries + pg_binaries,
-    datas=[("_updater.py", ".")] + ctk_datas + pg_datas,
+    datas=ctk_datas + pg_datas,
     hiddenimports=ctk_hiddenimports + pg_hiddenimports,
     hookspath=[],
     hooksconfig={},

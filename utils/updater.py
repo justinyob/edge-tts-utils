@@ -6,7 +6,6 @@ app can never crash while looking for an update.
 import logging
 import os
 import platform
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,7 +22,6 @@ from config import (
     UPDATE_CHECK_TIMEOUT,
     WINDOWS_ASSET_NAME,
 )
-from utils.paths import resource_path
 
 log = logging.getLogger(__name__)
 
@@ -104,48 +102,57 @@ def download_update(
         raise
 
 
-def _copy_updater_script() -> str:
-    """Copy _updater.py out of _MEIPASS to a stable temp location.
+_UPDATE_BAT_TEMPLATE = r"""@echo off
+setlocal
+echo Voice Studio updater
+echo Waiting for process %1 to exit...
+set /a TRIES=0
+:wait
+tasklist /FI "PID eq %1" 2>NUL | find "%1" >NUL
+if %ERRORLEVEL% NEQ 0 goto swap
+set /a TRIES+=1
+if %TRIES% GEQ 60 goto swap
+timeout /t 1 /nobreak >NUL
+goto wait
 
-    Required because in --onefile builds, _MEIPASS is wiped on app exit and
-    the helper script must outlive the parent process.
+:swap
+echo Replacing "%~3"
+move /Y "%~2" "%~3" >NUL
+if %ERRORLEVEL% NEQ 0 (
+    echo Failed to replace "%~3"
+    pause
+    exit /b 1
+)
+echo Relaunching...
+start "" "%~3"
+(goto) 2>nul & del "%~f0"
+"""
+
+
+def _write_update_bat() -> str:
+    """Write the Windows update helper .bat to a temp file. Returns the path.
+
+    The .bat takes three positional args: <parent_pid> <src_exe> <dst_exe>.
+    It waits for the parent to exit, replaces dst with src, relaunches dst,
+    and then deletes itself.
     """
-    src = resource_path("_updater.py")
-    if not os.path.exists(src):
-        raise FileNotFoundError(f"_updater.py not found at {src}")
-    fd, dst = tempfile.mkstemp(prefix="voice_studio_updater_", suffix=".py")
+    fd, path = tempfile.mkstemp(prefix="voice_studio_update_", suffix=".bat")
     os.close(fd)
-    shutil.copy2(src, dst)
-    return dst
+    with open(path, "w", encoding="ascii", newline="\r\n") as f:
+        f.write(_UPDATE_BAT_TEMPLATE)
+    return path
 
 
 def apply_update_windows(new_exe_path: str) -> None:
-    updater_script = _copy_updater_script()
-
-    python_exe = None
-    meipass = getattr(sys, "_MEIPASS", None)
-    if meipass:
-        candidate = os.path.join(meipass, "python.exe")
-        if os.path.exists(candidate):
-            python_exe = candidate
-    if python_exe is None:
-        python_exe = sys.executable
-
+    bat_path = _write_update_bat()
     args = [
-        python_exe,
-        updater_script,
-        "--wait-pid", str(os.getpid()),
-        "--src", new_exe_path,
-        "--dst", sys.executable,
-        "--relaunch",
+        "cmd.exe", "/c", bat_path,
+        str(os.getpid()), new_exe_path, sys.executable,
     ]
-    log.info("Launching Windows updater helper: %s", args)
+    log.info("Launching Windows updater bat: %s", args)
 
-    DETACHED_PROCESS = 0x00000008
-    CREATE_NEW_PROCESS_GROUP = 0x00000200
-    creationflags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
-
-    subprocess.Popen(args, close_fds=True, creationflags=creationflags)
+    CREATE_NEW_CONSOLE = 0x00000010
+    subprocess.Popen(args, close_fds=True, creationflags=CREATE_NEW_CONSOLE)
     sys.exit(0)
 
 
