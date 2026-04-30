@@ -1,5 +1,6 @@
 import logging
 import os
+import platform
 import sys
 
 from ui.app_window import AppWindow
@@ -26,12 +27,30 @@ def setup_logging() -> None:
                and getattr(h, "baseFilename", None) == handler.baseFilename
                for h in root.handlers):
         root.addHandler(handler)
+    # Quiet noisy libraries that emit large DEBUG volumes
+    logging.getLogger("urllib3").setLevel(logging.INFO)
+
+
+def _log_environment(log: logging.Logger) -> None:
+    log.info("Python %s on %s %s", sys.version.split()[0], platform.system(), platform.release())
+    log.info("Frozen=%s, executable=%s", getattr(sys, "frozen", False), sys.executable)
+    try:
+        import edge_tts
+        log.info("edge-tts version: %s", getattr(edge_tts, "__version__", "unknown"))
+    except Exception as e:
+        log.error("Could not import edge_tts: %r", e)
+    try:
+        import aiohttp
+        log.info("aiohttp version: %s", getattr(aiohttp, "__version__", "unknown"))
+    except Exception as e:
+        log.error("Could not import aiohttp: %r", e)
 
 
 def main() -> None:
     setup_logging()
     log = logging.getLogger("main")
     log.info("Voice Studio starting")
+    _log_environment(log)
     try:
         app = AppWindow()
         app.mainloop()

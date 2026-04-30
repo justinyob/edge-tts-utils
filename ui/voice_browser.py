@@ -154,6 +154,7 @@ class VoiceBrowserPanel(ctk.CTkFrame):
         return False
 
     def _kick_off_fetch(self) -> None:
+        log.info("VoiceBrowserPanel: submitting fetch_voices() to async bridge")
         self._async_bridge.run_async(
             self._voice_manager.fetch_voices(),
             on_complete=self._on_voices_loaded,
@@ -161,6 +162,7 @@ class VoiceBrowserPanel(ctk.CTkFrame):
         )
 
     def _on_voices_loaded(self, voices: list[dict]) -> None:
+        log.info("VoiceBrowserPanel: voices loaded (%d) — building rows", len(voices))
         self.loading_lbl.grid_remove()
         self._build_rows(voices)
         if self._pending_selection:
