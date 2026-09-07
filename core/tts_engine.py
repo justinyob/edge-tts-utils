@@ -1,3 +1,4 @@
+import inspect
 import logging
 import os
 import platform
@@ -5,6 +6,7 @@ import sys
 import tempfile
 import threading
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Callable, Optional
 
 import edge_tts
@@ -19,6 +21,7 @@ from core.exceptions import (
     SynthesisError,
 )
 from utils.paths import resource_path
+from utils.srt_builder import build_cues, events_to_words, write_srt
 from utils.text_chunker import chunk_text
 
 log = logging.getLogger(__name__)
@@ -30,27 +33,19 @@ class SynthesisResult:
     srt_path: Optional[str]
     duration_seconds: float
     chunk_count: int
+    srt_cue_count: int = 0
 
 
-def _format_srt_timestamp(seconds: float) -> str:
-    if seconds < 0:
-        seconds = 0.0
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    millis = int(round((seconds - int(seconds)) * 1000))
-    if millis == 1000:
-        secs += 1
-        millis = 0
-    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
+_BOUNDARY_TYPES = ("WordBoundary", "SentenceBoundary")
 
 
-def _write_srt(path: str, entries: list[tuple[float, float, str]]) -> None:
-    with open(path, "w", encoding="utf-8") as f:
-        for i, (start, end, text) in enumerate(entries, start=1):
-            f.write(f"{i}\n")
-            f.write(f"{_format_srt_timestamp(start)} --> {_format_srt_timestamp(end)}\n")
-            f.write(f"{text}\n\n")
+@lru_cache(maxsize=1)
+def _supports_boundary_arg() -> bool:
+    """edge-tts gained the `boundary` keyword in 7.x; degrade gracefully without it."""
+    try:
+        return "boundary" in inspect.signature(edge_tts.Communicate.__init__).parameters
+    except (TypeError, ValueError):
+        return False
 
 
 def _safe_remove(path: str) -> None:
@@ -116,10 +111,13 @@ class TTSEngine:
         collect_boundaries: bool,
     ) -> list[dict]:
         boundaries: list[dict] = []
+        kwargs = {"rate": rate, "pitch": pitch, "volume": volume}
+        if collect_boundaries and _supports_boundary_arg():
+            # edge-tts defaults to SentenceBoundary; word-level timings let us
+            # build properly sized caption cues.
+            kwargs["boundary"] = "WordBoundary"
         try:
-            communicate = edge_tts.Communicate(
-                text, voice, rate=rate, pitch=pitch, volume=volume
-            )
+            communicate = edge_tts.Communicate(text, voice, **kwargs)
         except Exception as e:
             log.exception("edge_tts.Communicate construction failed")
             raise SynthesisError(MSG_SYNTHESIS_FAILED) from e
@@ -141,7 +139,7 @@ class TTSEngine:
                     etype = event.get("type")
                     if etype == "audio":
                         f.write(event["data"])
-                    elif etype == "WordBoundary" and collect_boundaries:
+                    elif collect_boundaries and etype in _BOUNDARY_TYPES:
                         boundaries.append(event)
             except Exception as e:
                 log.exception("edge_tts streaming failed for chunk")
@@ -172,7 +170,7 @@ class TTSEngine:
         total = len(chunks)
         temp_dir = tempfile.mkdtemp(prefix=TEMP_DIR_PREFIX)
         chunk_files: list[str] = []
-        srt_entries: list[tuple[float, float, str]] = []
+        srt_words: list[tuple[float, float, str]] = []
         cumulative_offset_seconds = 0.0
 
         try:
@@ -188,11 +186,12 @@ class TTSEngine:
                 chunk_files.append(chunk_path)
 
                 if srt_path is not None:
-                    for ev in boundaries:
-                        # offset/duration are in 100-nanosecond units
-                        start = cumulative_offset_seconds + ev["offset"] / 10_000_000
-                        end = start + ev["duration"] / 10_000_000
-                        srt_entries.append((start, end, ev.get("text", "")))
+                    # Chunk timings are chunk-relative; shift them onto the
+                    # timeline of the concatenated output.
+                    srt_words.extend(
+                        events_to_words(boundaries, source=chunk,
+                                        offset_seconds=cumulative_offset_seconds)
+                    )
 
                 try:
                     segment = AudioSegment.from_file(chunk_path, format="mp3")
@@ -230,9 +229,16 @@ class TTSEngine:
                 log.exception("Failed exporting final MP3 to %s", output_path)
                 raise DiskWriteError(MSG_DISK_WRITE_FAILED) from e
 
+            cue_count = 0
             if srt_path is not None:
+                cues = build_cues(srt_words)
+                cue_count = len(cues)
+                if not cues:
+                    log.warning(
+                        "No boundary events received; SRT at %s will be empty", srt_path
+                    )
                 try:
-                    _write_srt(srt_path, srt_entries)
+                    write_srt(srt_path, cues)
                 except OSError as e:
                     log.exception("Failed writing SRT to %s", srt_path)
                     raise DiskWriteError(MSG_DISK_WRITE_FAILED) from e
@@ -242,6 +248,7 @@ class TTSEngine:
                 srt_path=srt_path,
                 duration_seconds=len(combined) / 1000.0,
                 chunk_count=total,
+                srt_cue_count=cue_count,
             )
         finally:
             for cf in chunk_files:
@@ -279,6 +286,7 @@ class TTSEngine:
 
 if __name__ == "__main__":
     import asyncio
+    import re
 
     async def _test():
         engine = TTSEngine()
@@ -314,8 +322,29 @@ if __name__ == "__main__":
             assert result.duration_seconds > 0
             assert result.chunk_count == 1
             assert progress_log == [(1, 1)], f"progress log: {progress_log}"
+
+            srt_body = open(srt_path, encoding="utf-8").read()
+            assert srt_body.strip(), "srt is empty — no boundary events collected"
+            assert result.srt_cue_count > 0, "no cues built"
+            assert srt_body.count(" --> ") == result.srt_cue_count
+            assert srt_body.startswith("1\n"), srt_body[:40]
+            # Cues must stay inside the audio timeline and never run backwards
+            times = re.findall(
+                r"(\d\d):(\d\d):(\d\d),(\d\d\d) --> (\d\d):(\d\d):(\d\d),(\d\d\d)", srt_body
+            )
+            assert len(times) == result.srt_cue_count
+            prev_end = 0.0
+            for h1, m1, s1, ms1, h2, m2, s2, ms2 in times:
+                start = int(h1) * 3600 + int(m1) * 60 + int(s1) + int(ms1) / 1000
+                end = int(h2) * 3600 + int(m2) * 60 + int(s2) + int(ms2) / 1000
+                assert start >= prev_end, f"cue overlaps previous: {start} < {prev_end}"
+                assert end > start, f"non-positive cue duration at {start}"
+                assert end <= result.duration_seconds + 1.0, (
+                    f"cue end {end} past audio duration {result.duration_seconds}"
+                )
+                prev_end = end
             print(f"  synthesize: {os.path.getsize(out_path)} bytes, "
-                  f"{result.duration_seconds:.2f}s, srt entries OK")
+                  f"{result.duration_seconds:.2f}s, {result.srt_cue_count} srt cues OK")
 
             preview = await engine.synthesize_preview(
                 text=text,

@@ -368,7 +368,15 @@ class TextPanel(ctk.CTkFrame):
             f"File size: {size_mb:.1f} MB"
         )
         if result.srt_path:
-            msg += f"\nSubtitles: {result.srt_path}"
+            count = getattr(result, "srt_cue_count", 0)
+            if count:
+                msg += f"\nSubtitles: {result.srt_path} ({count} cues)"
+            else:
+                msg += (
+                    f"\nSubtitles: {result.srt_path}"
+                    "\n(No subtitle timings were returned for this voice, "
+                    "so the .srt file is empty.)"
+                )
         show_info_dialog(self, "Export complete", msg)
 
     def _on_export_error(self, exc: BaseException) -> None:

@@ -4,7 +4,7 @@ import sys
 import tempfile
 
 APP_NAME = "Voice Studio"
-APP_VERSION = "1.0.10"
+APP_VERSION = "1.0.11"
 
 DEFAULT_SAMPLE_TEXT = (
     "I love my friend Micah. "
@@ -21,6 +21,13 @@ PITCH_MIN, PITCH_MAX = -50, 50
 
 CHUNK_SIZE_WORDS = 500
 CHUNK_OVERLAP = 0
+
+# Subtitles — caption sizing for the generated SRT
+SRT_MAX_CHARS_PER_LINE = 42
+SRT_MAX_LINES_PER_CUE = 2
+SRT_MAX_CUE_SECONDS = 6.0
+SRT_MIN_CUE_SECONDS = 0.7
+SRT_MAX_GAP_SECONDS = 1.5
 
 SETTINGS_FILENAME = "settings.json"
 TEMP_DIR_PREFIX = "voice_studio_"
